@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Optional, Tuple
@@ -71,13 +72,15 @@ class HiFitiAutomation:
 
         self._bootstrap_session()
         login_url = self._full_url("user-login.htm")
+        hashed_password = hashlib.md5(self.cfg.password.encode("utf-8")).hexdigest()
         payload = {
             "email": self.cfg.username,
-            "password": self.cfg.password,
+            "password": hashed_password,
         }
         headers = {
             "Origin": self.cfg.base_url,
             "Referer": login_url,
+            "X-Requested-With": "XMLHttpRequest",
         }
 
         try:
@@ -94,6 +97,22 @@ class HiFitiAutomation:
 
         if resp.status_code != 200:
             print(f"❌ 登录失败，HTTP 状态码：{resp.status_code}")
+            return False
+
+        json_feedback: Optional[Dict[str, str]] = None
+        try:
+            json_feedback = resp.json()
+        except ValueError:
+            json_feedback = None
+
+        if json_feedback is not None:
+            raw_code = json_feedback.get("code")
+            message = json_feedback.get("message", "").strip()
+            if str(raw_code) == "0":
+                uid = self.session.cookies.get("bbs_uid")
+                print(f"🎉 登录成功，站点返回：{message or '登录成功'}，UID={uid or '未知'}")
+                return True
+            print(f"❌ 登录失败，站点返回：{message or raw_code}")
             return False
 
         uid = self.session.cookies.get("bbs_uid")
